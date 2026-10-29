@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Youtube, FileText, BookOpen, Search, Play, Maximize2, Minimize2, CheckCircle2, RotateCcw, ArrowLeft } from "lucide-react";
+import { MonitorPlay as Youtube, FileText, BookOpen, Search, Play, Maximize2, Minimize2, CheckCircle2, RotateCcw, ArrowLeft } from "lucide-react";
 import { usePersisted } from "@/lib/store";
 
 export const Route = createFileRoute("/workspace")({
