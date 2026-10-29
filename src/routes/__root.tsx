@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 
 import { Toaster } from "sonner";
 import { NavBar } from "@/components/NavBar";
+import { StudyLibrary } from "@/components/StudyLibrary";
+import { StudyAccount } from "@/components/StudyAccount";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -126,7 +128,10 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <NavBar />
+      <StudyLibrary>
+      <StudyAccount />
       <Outlet />
+      </StudyLibrary>
       <Toaster theme="dark" position="bottom-right" richColors />
     </QueryClientProvider>
   );

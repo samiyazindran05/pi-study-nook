@@ -10,6 +10,8 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "A calm, distraction-free study dashboard with a focus checklist and scratchpad." },
       { property: "og:title", content: "Compile — Daily Focus Dashboard" },
       { property: "og:description", content: "A calm, distraction-free study dashboard." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Dashboard,
