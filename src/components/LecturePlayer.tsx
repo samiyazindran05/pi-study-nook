@@ -26,7 +26,7 @@ export function LecturePlayer({ id }: { id: string }) {
       const element = document.createElement("div"); container.current.replaceChildren(element);
       player = new api.Player(element, { videoId: id, host: "https://www.youtube-nocookie.com", playerVars: { origin: window.location.origin, rel: 0, playsinline: 1 }, events: {
         onStateChange: e => { if (active && e.data === 0) setEnded(true); },
-        onError: () => { if (active) setError("This video is unavailable or its creator does not allow in-app playback."); },
+        onError: e => { if (active) setError(e.data === 153 ? "YouTube could not verify this preview. Try this lecture on the published app." : e.data === 101 || e.data === 150 ? "The creator does not allow this video to play inside other apps." : "YouTube could not play this video. Check the link or try another lecture."); },
       } });
     });
     return () => { active = false; player?.destroy(); };

@@ -27,6 +27,21 @@ function Notes() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const importLocalNotes = async () => {
+    setImportBusy(true);
+    try {
+      const raw = localStorage.getItem("compile.docs");
+      const old: Doc[] = raw ? JSON.parse(raw) : [];
+      const pending = old.filter(note => !docs.some(saved => saved.title === note.title && saved.body === note.body));
+      for (const note of pending) {
+        if (!folders.includes(note.folder)) await createFolder(note.folder);
+        await saveNote(note.title, note.body, note.folder);
+      }
+      toast.success(pending.length ? `Imported ${pending.length} device notes` : "No new device notes to import");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not import notes"); }
+    finally { setImportBusy(false); }
+  };
 
   const addFolder = async () => {
     const name = prompt("New subject folder name")?.trim();
@@ -63,6 +78,7 @@ function Notes() {
             <span className="text-xs text-muted-foreground">{docs.filter((d) => d.folder === f).length}</span>
           </button>
         ))}
+        {user && <Button variant="link" className="mt-3 w-full whitespace-normal" disabled={importBusy || !ready} onClick={() => void importLocalNotes()}>{importBusy ? "Importing…" : "Import earlier device notes"}</Button>}
       </aside>
 
       {view === null ? (
