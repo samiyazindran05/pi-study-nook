@@ -37,10 +37,10 @@ function Notes() {
   };
 
   const save = () => {
-    if (!title.trim()) return toast.error("Give your note a title first");
+    if (!title.trim()) { toast.error("Give your note a title first"); return; }
     setBusy(true);
     setTimeout(() => {
-      const { table, folder } = enrich(title, folders, view ?? folders[0]);
+      const { table, folder } = enrich(title, folders, view ?? folders[0] ?? "Physics");
       const finalBody = body + table;
       setBody(finalBody);
       setTimeout(() => {
@@ -120,14 +120,15 @@ function Notes() {
 }
 
 function Markdown({ text }: { text: string }) {
-  const lines = text.split("\n");
+  const lines: string[] = text.split("\n");
   const out: React.ReactNode[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
+    const l = lines[i] ?? "";
     if (l.startsWith("|")) {
       const rows: string[][] = [];
-      while (i < lines.length && lines[i].startsWith("|")) {
-        if (!/^\|[-| ]+\|$/.test(lines[i])) rows.push(lines[i].split("|").slice(1, -1).map((c) => c.trim().replace(/`/g, "")));
+      while (i < lines.length && (lines[i] ?? "").startsWith("|")) {
+        const row = lines[i] ?? "";
+        if (!/^\|[-| ]+\|$/.test(row)) rows.push(row.split("|").slice(1, -1).map((c) => c.trim().replace(/`/g, "")));
         i++;
       }
       i--;
