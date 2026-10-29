@@ -1,0 +1,14 @@
+CREATE TABLE public.study_notes (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, title text NOT NULL, body text NOT NULL, folder text NOT NULL, date text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_notes TO authenticated;
+GRANT ALL ON public.study_notes TO service_role;
+ALTER TABLE public.study_notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own notes" ON public.study_notes FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE INDEX study_notes_owner ON public.study_notes(user_id, created_at DESC);
+CREATE TABLE public.study_folders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, name text NOT NULL, UNIQUE(user_id, name));
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_folders TO authenticated;
+GRANT ALL ON public.study_folders TO service_role;
+ALTER TABLE public.study_folders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Own folders" ON public.study_folders FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Read own PDFs" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'study-pdfs' AND (storage.foldername(name))[1] = auth.uid()::text);
+CREATE POLICY "Upload own PDFs" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'study-pdfs' AND (storage.foldername(name))[1] = auth.uid()::text AND lower(storage.extension(name)) = 'pdf');
+CREATE POLICY "Delete own PDFs" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'study-pdfs' AND (storage.foldername(name))[1] = auth.uid()::text);
