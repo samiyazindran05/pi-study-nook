@@ -1,161 +1,100 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { MonitorPlay as Youtube, FileText, BookOpen, Search, Play, Maximize2, Minimize2, CheckCircle2, RotateCcw, ArrowLeft } from "lucide-react";
+import { MonitorPlay, FileText, BookOpen, Play, Maximize2, Minimize2, ArrowLeft, Upload, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { usePersisted } from "@/lib/store";
+import { youtubeId } from "@/lib/lecture";
+import { supabase } from "@/integrations/supabase/client";
+import { useStudyLibrary } from "@/components/StudyLibrary";
+import { Button } from "@/components/ui/button";
+import { PdfReader } from "@/components/PdfReader";
+import { LecturePlayer } from "@/components/LecturePlayer";
 
 export const Route = createFileRoute("/workspace")({
-  head: () => ({
-    meta: [
-      { title: "Compile — Focused Split Workspace" },
-      { name: "description", content: "Watch lectures or read textbooks side by side with a persistent notepad." },
-      { property: "og:title", content: "Compile — Focused Split Workspace" },
-      { property: "og:description", content: "Distraction-free lectures and reading next to your notes." },
-    ],
-  }),
-  component: Workspace,
+  head: () => ({ meta: [
+    { title: "Comπle — Lecture Workspace" }, { name: "description", content: "Watch YouTube lectures and read your uploaded PDFs beside notes saved to your subject folders." },
+    { property: "og:title", content: "Comπle — Lecture Workspace" }, { property: "og:description", content: "Real lectures, private PDFs, and sorted study notes in one workspace." },
+    { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" },
+  ] }), component: Workspace,
 });
-
-const VIDEO_IDS = ["SOGnz9wOByc", "WH4xt8Sx3Zk", "WUvTyaaNkzM"];
-const CHANNELS = ["Crash Course", "Khan Academy", "MIT OpenCourseWare"];
-
-const FILES = [
-  { name: "HC Verma — Thermodynamics.pdf", kind: "pdf", body: ["Chapter 26: Laws of Thermodynamics", "The first law of thermodynamics is a statement of conservation of energy. When heat Q is given to a system, part of it increases the internal energy U and the rest is used in doing work W: Q = ΔU + W.", "A process in which the temperature remains constant is called isothermal. For an ideal gas undergoing isothermal expansion, the work done equals nRT ln(V₂/V₁).", "In an adiabatic process no heat is exchanged; PV^γ remains constant."] },
-  { name: "NCERT Chemistry — Equilibrium.pdf", kind: "pdf", body: ["Unit 7: Equilibrium", "Equilibrium is a dynamic state in which the rates of the forward and reverse reactions are equal.", "Le Chatelier's principle: if a system at equilibrium is disturbed, it adjusts itself to counteract the change.", "The pH of a solution is defined as the negative logarithm of hydrogen ion concentration."] },
-  { name: "Calculus Cheat Sheet", kind: "notion", body: ["📘 Calculus — Notion Doc", "Limits describe behaviour as x approaches a value.", "Derivatives measure the instantaneous rate of change. Remember the chain rule for composite functions.", "Integration is the reverse of differentiation; always add + C for indefinite integrals."] },
-  { name: "Exam Week Plan", kind: "notion", body: ["🗓️ Exam Week Plan — Notion Doc", "Mon: Physics mechanics revision + 2 past papers.", "Tue: Organic chemistry mechanisms.", "Wed: Maths — integration practice. Rest at 9pm."] },
-];
-
-type Tab = "yt" | "pdf" | "notion";
-
+type PdfFile = { name: string; path: string };
+const notionDocs = [{ title: "Calculus Cheat Sheet", body: "Limits describe behaviour as x approaches a value.\n\nDerivatives measure the instantaneous rate of change. Remember the chain rule.\n\nIntegration is the reverse of differentiation; always add + C." }, { title: "Exam Week Plan", body: "Monday: Mechanics revision.\nTuesday: Organic chemistry.\nWednesday: Integration practice." }];
 function Workspace() {
-  const [tab, setTab] = useState<Tab>("yt");
+  const { user, folders, save, ready } = useStudyLibrary();
+  const [tab, setTab] = useState<"yt" | "pdf" | "notion">("yt");
   const [notes, setNotes] = usePersisted("compile.lecture", "");
-  const [focus, setFocus] = useState(false);
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<{ id: string; title: string; ch: string }[]>([]);
-  const [video, setVideo] = useState<string | null>(null);
-  const [ended, setEnded] = useState(false);
-  const [file, setFile] = useState<(typeof FILES)[number] | null>(null);
-  const frame = useRef<HTMLIFrameElement>(null);
-
+  const [title, setTitle] = usePersisted("compile.lectureTitle", "");
+  const [focus, setFocus] = useState(false); const [link, setLink] = useState(""); const [video, setVideo] = useState<string | null>(null);
+  const [files, setFiles] = useState<PdfFile[]>([]); const [file, setFile] = useState<PdfFile | null>(null); const [url, setUrl] = useState(""); const [fileLoading, setFileLoading] = useState(false);
+  const [uploading, setUploading] = useState(false); const [saving, setSaving] = useState(false); const [loadingFiles, setLoadingFiles] = useState(false); const [fileError, setFileError] = useState("");
+  const [doc, setDoc] = useState<(typeof notionDocs)[number] | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const loadFiles = async () => {
+    if (!user) return;
+    setLoadingFiles(true); setFileError("");
+    const { data, error } = await supabase.storage.from("study-pdfs").list(user.id, { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
+    if (error) setFileError(error.message);
+    else setFiles((data ?? []).filter(f => f.name.endsWith(".pdf")).map(f => ({ name: f.name.slice(f.name.indexOf("_") + 1), path: `${user.id}/${f.name}` })));
+    setLoadingFiles(false);
+  };
+  useEffect(() => { setFiles([]); setFile(null); setUrl(""); void loadFiles(); }, [user?.id]);
   useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      if (!String(e.origin).includes("youtube")) return;
-      try {
-        const d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (d?.info?.playerState === 0 || (d?.event === "onStateChange" && d?.info === 0)) setEnded(true);
-      } catch {}
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, []);
-
-  const listen = () => {
-    const w = frame.current?.contentWindow;
-    w?.postMessage(JSON.stringify({ event: "listening", id: 1 }), "*");
-    w?.postMessage(JSON.stringify({ event: "command", func: "addEventListener", args: ["onStateChange"] }), "*");
+    let active = true; setUrl("");
+    if (!file) return;
+    setFileLoading(true);
+    supabase.storage.from("study-pdfs").createSignedUrl(file.path, 3600).then(({ data, error }) => {
+      if (!active) return;
+      if (error) toast.error(error.message); else setUrl(data?.signedUrl ?? "");
+      setFileLoading(false);
+    });
+    return () => { active = false; };
+  }, [file]);
+  const upload = async (selected: File | undefined) => {
+    if (!selected || !user) return;
+    if (!selected.name.toLowerCase().endsWith(".pdf")) { toast.error("Choose a PDF file"); return; }
+    if (selected.size > 50 * 1024 * 1024) { toast.error("Choose a PDF smaller than 50 MB"); return; }
+    const header = await selected.slice(0, 5).text();
+    if (header !== "%PDF-") { toast.error("This file is not a valid PDF"); return; }
+    setUploading(true);
+    const name = selected.name.replace(/[^a-zA-Z0-9.\-_ ]/g, "_").replace(/\.pdf$/i, ".pdf");
+    const path = `${user.id}/${crypto.randomUUID()}_${name}`;
+    const { error } = await supabase.storage.from("study-pdfs").upload(path, selected, { contentType: "application/pdf" });
+    if (error) toast.error(error.message); else { await loadFiles(); setFile({ name, path }); toast.success("PDF uploaded to your library"); }
+    setUploading(false); if (input.current) input.current.value = "";
   };
-
-  const search = () => {
-    const t = q.trim() || "Study";
-    setResults(["Complete Lecture", "Explained Simply", "Exam Problem Walkthrough"].map((s, i) => ({ id: VIDEO_IDS[i]!, title: `${t}: ${s}`, ch: CHANNELS[i]! })));
-    setVideo(null);
+  const saveNotes = async () => {
+    if (!title.trim() || !notes.trim()) { toast.error("Add a title and lecture notes first"); return; }
+    setSaving(true);
+    try { const saved = await save(title, notes); setNotes(""); setTitle(""); toast.success(`Saved to ${saved.folder}`, { action: { label: "Open Notes Hub", onClick: () => { window.location.href = "/notes"; } } }); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Could not save notes"); } finally { setSaving(false); }
   };
-
-  const tabs = [
-    { id: "yt" as const, label: "YouTube", icon: Youtube },
-    { id: "pdf" as const, label: "Files / PDF", icon: FileText },
-    { id: "notion" as const, label: "Notion Doc", icon: BookOpen },
-  ];
-
-  return (
-    <main className={`mx-auto grid h-[calc(100vh-64px)] max-w-[1600px] gap-4 p-4 transition-all duration-500 ${focus ? "grid-cols-1" : "md:grid-cols-2"}`}>
-      <section className="panel flex min-h-0 flex-col overflow-hidden">
-        <div className="flex items-center gap-1 border-b border-border p-2">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => { setTab(id); setFile(null); }}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${tab === id ? "bg-secondary text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-              <Icon size={16} /> {label}
-            </button>
-          ))}
-          {tab === "yt" && video && (
-            <button onClick={() => setFocus(!focus)} className="ml-auto flex items-center gap-2 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition hover:scale-105">
-              {focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />} ✨ Fullscreen Focus Mode
-            </button>
-          )}
-        </div>
-
-        <div key={tab} className="fade-up min-h-0 flex-1 overflow-auto p-5">
-          {tab === "yt" && (
-            <>
-              <form onSubmit={(e) => { e.preventDefault(); search(); }} className="flex items-center gap-2 rounded-2xl border border-input bg-background/60 px-4 py-2 focus-within:border-primary">
-                <Search size={18} className="text-muted-foreground" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="No-distraction search — e.g. Thermodynamics"
-                  className="flex-1 bg-transparent py-1.5 outline-none" />
-                <button className="rounded-xl bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground">Search</button>
-              </form>
-
-              {video ? (
-                <div className="fade-up mt-5">
-                  <button onClick={() => { setVideo(null); setFocus(false); }} className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={15} />Results</button>
-                  <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-background">
-                    <iframe ref={frame} onLoad={listen} className="h-full w-full"
-                      src={`https://www.youtube-nocookie.com/embed/${video}?enablejsapi=1&rel=0&modestbranding=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`}
-                      allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen title="Lecture" />
-                    {ended && (
-                      <div className="fade-up absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background">
-                        <CheckCircle2 size={56} className="text-primary" />
-                        <h3 className="text-2xl font-semibold">Lesson Complete</h3>
-                        <p className="text-sm text-muted-foreground">Great work. Take a breath, then review your notes.</p>
-                        <button onClick={() => { setEnded(false); setVideo(null); setFocus(false); }} className="mt-2 flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm hover:bg-muted"><RotateCcw size={15} />Back to search</button>
-                      </div>
-                    )}
-                  </div>
-                  {!ended && <button onClick={() => setEnded(true)} className="mt-3 text-xs text-muted-foreground hover:text-foreground">Mark lesson as finished</button>}
-                </div>
-              ) : results.length ? (
-                <div className="mt-5 space-y-3">
-                  {results.map((r, i) => (
-                    <div key={r.id} className="fade-up flex items-center gap-4 rounded-2xl border border-border bg-background/40 p-3" style={{ animationDelay: `${i * 70}ms` }}>
-                      <img src={`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`} alt="" className="h-20 w-36 rounded-xl object-cover" />
-                      <div className="flex-1"><p className="font-medium">{r.title}</p><p className="text-sm text-muted-foreground">{r.ch}</p></div>
-                      <button onClick={() => { setVideo(r.id); setEnded(false); }} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"><Play size={14} />Watch</button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-16 text-center text-muted-foreground">Search a topic. Only 3 results — no rabbit holes.</p>
-              )}
-            </>
-          )}
-
-          {tab !== "yt" && (file ? (
-            <article className="fade-up max-w-prose">
-              <button onClick={() => setFile(null)} className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={15} />All files</button>
-              <h2 className="text-2xl font-semibold text-primary">{file.body[0]}</h2>
-              {file.body.slice(1).map((p, i) => <p key={i} className="mt-4 text-lg leading-relaxed">{p}</p>)}
-            </article>
-          ) : (
-            <div className="space-y-2">
-              {FILES.filter((f) => f.kind === tab).map((f) => (
-                <button key={f.name} onClick={() => setFile(f)} className="flex w-full items-center gap-3 rounded-2xl border border-border bg-background/40 p-4 text-left transition hover:border-primary/50 hover:translate-x-1">
-                  {tab === "pdf" ? <FileText className="text-destructive" /> : <BookOpen className="text-accent" />}
-                  <span className="flex-1 font-medium">{f.name}</span>
-                  <span className="text-xs text-muted-foreground">Open</span>
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {!focus && (
-        <section className="panel fade-up flex min-h-0 flex-col p-5">
-          <p className="text-xs uppercase tracking-widest text-accent">Lecture notes · autosaved</p>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Type as you learn…"
-            className="mt-3 flex-1 resize-none rounded-xl border border-input bg-background/50 p-4 font-mono text-sm leading-relaxed outline-none focus:border-accent" />
-        </section>
-      )}
-    </main>
-  );
+  return <main className={`mx-auto grid min-h-[calc(100dvh-120px)] max-w-[1600px] gap-4 p-4 ${focus ? "grid-cols-1" : "md:grid-cols-2"}`}>
+    <section className="panel flex min-w-0 flex-col overflow-hidden">
+      <div className="flex flex-wrap items-center gap-1 border-b border-border p-2">
+        {([{ id: "yt", label: "YouTube", icon: MonitorPlay }, { id: "pdf", label: "Files / PDF", icon: FileText }, { id: "notion", label: "Notion Doc", icon: BookOpen }] as const).map(({ id, label, icon: Icon }) => <Button key={id} variant={tab === id ? "secondary" : "ghost"} onClick={() => { setTab(id); setFocus(false); }}><Icon />{label}</Button>)}
+        {tab === "yt" && video && <Button variant="outline" className="ml-auto" title={focus ? "Exit focus mode" : "Fullscreen focus mode"} onClick={() => setFocus(!focus)}>{focus ? <Minimize2 /> : <Maximize2 />}{focus ? "Exit focus" : "Focus mode"}</Button>}
+      </div>
+      <div className="min-w-0 flex-1 p-4">
+        {tab === "yt" && <>
+          <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); const id = youtubeId(link); if (!id) { toast.error("Enter a valid YouTube video link"); return; } setVideo(id); }}>
+            <input aria-label="YouTube video link" value={link} onChange={e => setLink(e.target.value)} placeholder="Paste a YouTube lecture link" className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 outline-none focus:border-primary" />
+            <Button><Play />Watch</Button>
+          </form>
+          {video ? <div className="mt-5"><LecturePlayer id={video} /></div> : <div className="py-16 text-center text-muted-foreground"><MonitorPlay className="mx-auto mb-3" size={32} /><p>No lecture open</p></div>}
+        </>}
+        {tab === "pdf" && <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">{file ? <Button variant="ghost" onClick={() => setFile(null)}><ArrowLeft />All PDFs</Button> : <h2 className="text-lg font-semibold">Your PDFs</h2>}<input ref={input} type="file" accept="application/pdf,.pdf" className="hidden" onChange={e => void upload(e.target.files?.[0])} /><Button disabled={!user || uploading} onClick={() => input.current?.click()}>{uploading ? <Loader2 className="animate-spin" /> : <Upload />}{uploading ? "Uploading…" : "Upload PDF"}</Button></div>
+          {file ? <><h3 className="mb-3 break-words font-medium">{file.name}</h3>{url ? <div className="max-h-[65dvh] overflow-auto"><PdfReader url={url} /></div> : fileLoading ? <Loader2 className="animate-spin" aria-label="Opening PDF" /> : <p className="text-destructive">Unable to open PDF. Return to the list and retry.</p>}</> : !user ? <p className="py-12 text-center text-muted-foreground">Sign in to open your private PDF library.</p> : loadingFiles ? <Loader2 className="mx-auto animate-spin" /> : fileError ? <div role="alert"><p>{fileError}</p><Button onClick={() => void loadFiles()}>Retry</Button></div> : files.length ? <div className="space-y-2">{files.map(f => <div key={f.path} className="flex items-center gap-2 rounded-lg border border-border p-2"><Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start whitespace-normal text-left" onClick={() => setFile(f)}><FileText /><span className="break-all">{f.name}</span></Button><Button variant="ghost" size="icon" title="Delete PDF" aria-label={`Delete ${f.name}`} onClick={async () => { if (!confirm(`Delete ${f.name}?`)) return; const { error } = await supabase.storage.from("study-pdfs").remove([f.path]); if (error) toast.error(error.message); else { await loadFiles(); toast.success("PDF deleted"); } }}><Trash2 /></Button></div>)}</div> : <p className="py-12 text-center text-muted-foreground">No PDFs uploaded yet.</p>}
+        </>}
+        {tab === "notion" && (doc ? <article><Button variant="ghost" onClick={() => setDoc(null)}><ArrowLeft />All documents</Button><h2 className="mt-4 text-2xl font-semibold">{doc.title}</h2><p className="mt-4 whitespace-pre-wrap leading-relaxed">{doc.body}</p></article> : <div className="space-y-2"><p className="mb-4 text-xs text-muted-foreground">Sample documents</p>{notionDocs.map(d => <Button key={d.title} variant="outline" className="w-full justify-start" onClick={() => setDoc(d)}><BookOpen />{d.title}</Button>)}</div>)}
+      </div>
+    </section>
+    {!focus && <section className="panel flex min-h-[420px] min-w-0 flex-col p-5">
+      <div className="mb-3 flex items-center justify-between gap-2"><h1 className="text-lg font-semibold">Lecture notes</h1><Link to="/notes" className="text-sm text-primary">Notes Hub</Link></div>
+      <input aria-label="Lecture note title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title — e.g. Thermodynamics" disabled={saving} className="w-full border-b border-input bg-transparent py-3 text-xl outline-none" />
+      <textarea aria-label="Lecture notes" value={notes} onChange={e => setNotes(e.target.value)} disabled={saving} placeholder="Type as you learn…" className="mt-3 min-h-64 flex-1 resize-none rounded-lg border border-input bg-background/50 p-4 font-mono text-sm leading-relaxed outline-none focus:border-accent" />
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Draft saved on this device</span><Button disabled={saving || !user || !ready} onClick={() => void saveNotes()}>{saving ? <Loader2 className="animate-spin" /> : <Sparkles />}{saving ? "Saving…" : "Auto Sort & Save"}</Button></div>
+      {!user && <p className="mt-3 text-sm text-muted-foreground">Sign in to save to your subject folders.</p>}
+    </section>}
+  </main>;
 }

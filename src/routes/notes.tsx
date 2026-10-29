@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Folder, Plus, FileText, Loader2, Sparkles, PenLine, X } from "lucide-react";
 import { toast } from "sonner";
-import { usePersisted, enrich, type Doc } from "@/lib/store";
+import { type Doc } from "@/lib/store";
+import { useStudyLibrary } from "@/components/StudyLibrary";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/notes")({
   head: () => ({
@@ -11,44 +13,53 @@ export const Route = createFileRoute("/notes")({
       { name: "description", content: "Subject folders and a markdown editor that auto-adds key formulas." },
       { property: "og:title", content: "Compile — Intelligent Notes Hub" },
       { property: "og:description", content: "Subject folders and a smart markdown notepad." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Notes,
 });
 
-const seed: Doc[] = [
-  { id: "a", title: "Wave Optics", body: "# Wave Optics\nInterference, diffraction…", folder: "Physics", date: "Oct 21" },
-  { id: "b", title: "Organic Reactions", body: "# Organic\nSN1 vs SN2…", folder: "Chemistry", date: "Oct 24" },
-  { id: "c", title: "Matrices", body: "# Matrices\nDeterminants…", folder: "Maths", date: "Oct 26" },
-];
-
 function Notes() {
-  const [folders, setFolders] = usePersisted("compile.folders", ["Physics", "Chemistry", "Maths"]);
-  const [docs, setDocs] = usePersisted<Doc[]>("compile.docs", seed);
+  const { folders, docs, save: saveNote, addFolder: createFolder, user, ready } = useStudyLibrary();
   const [view, setView] = useState<string | null>(null); // null = editor
   const [open, setOpen] = useState<Doc | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const addFolder = () => {
-    const name = prompt("New subject folder name")?.trim();
-    if (name && !folders.includes(name)) { setFolders([...folders, name]); setView(name); }
+  const [importBusy, setImportBusy] = useState(false);
+  const importLocalNotes = async () => {
+    setImportBusy(true);
+    try {
+      const raw = localStorage.getItem("compile.docs");
+      const old: Doc[] = raw ? JSON.parse(raw) : [];
+      const pending = old.filter(note => !docs.some(saved => saved.title === note.title && saved.body === note.body));
+      for (const note of pending) {
+        if (!folders.includes(note.folder)) await createFolder(note.folder);
+        await saveNote(note.title, note.body, note.folder);
+      }
+      toast.success(pending.length ? `Imported ${pending.length} device notes` : "No new device notes to import");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not import notes"); }
+    finally { setImportBusy(false); }
   };
 
-  const save = () => {
+  const addFolder = async () => {
+    const name = prompt("New subject folder name")?.trim();
+    if (name && !folders.includes(name)) {
+      try { await createFolder(name); setView(name); }
+      catch (error) { toast.error(error instanceof Error ? error.message : "Could not create folder"); }
+    }
+  };
+
+  const save = async () => {
     if (!title.trim()) { toast.error("Give your note a title first"); return; }
     setBusy(true);
-    setTimeout(() => {
-      const { table, folder } = enrich(title, folders, view ?? folders[0] ?? "Physics");
-      const finalBody = body + table;
-      setBody(finalBody);
-      setTimeout(() => {
-        setDocs((d) => [{ id: crypto.randomUUID(), title, body: finalBody, folder, date: new Date().toLocaleDateString("en", { month: "short", day: "numeric" }) }, ...d]);
-        setTitle(""); setBody(""); setBusy(false);
-        toast.success(`Saved to ${folder}`, { description: table ? "Key formulas appended ✨" : "Filed and ready." });
-      }, 500);
-    }, 1500);
+    try {
+      const note = await saveNote(title, body, view ?? folders[0]);
+      setTitle(""); setBody("");
+      toast.success(`Saved to ${note.folder}`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save note"); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -67,6 +78,7 @@ function Notes() {
             <span className="text-xs text-muted-foreground">{docs.filter((d) => d.folder === f).length}</span>
           </button>
         ))}
+        {user && <Button variant="link" className="mt-3 w-full whitespace-normal" disabled={importBusy || !ready} onClick={() => void importLocalNotes()}>{importBusy ? "Importing…" : "Import earlier device notes"}</Button>}
       </aside>
 
       {view === null ? (
@@ -77,11 +89,12 @@ function Notes() {
             placeholder={"# Heading\n- bullet points\n**bold** ideas…"}
             className="mt-4 flex-1 resize-none rounded-xl border border-input bg-background/50 p-4 font-mono text-sm leading-relaxed outline-none focus:border-primary" />
           <div className="mt-4 flex justify-end">
-            <button onClick={save} disabled={busy} className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-medium text-primary-foreground transition hover:scale-[1.03] disabled:opacity-70">
+            <Button onClick={save} disabled={busy || !user || !ready} className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-medium text-primary-foreground transition hover:scale-[1.03] disabled:opacity-70">
               {busy ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
               {busy ? "Sorting…" : "Auto Sort & Save"}
-            </button>
+            </Button>
           </div>
+          {!user && <p className="mt-3 text-sm text-muted-foreground">Sign in to save to your subject folders.</p>}
         </section>
       ) : (
         <section key={view} className="fade-up">
