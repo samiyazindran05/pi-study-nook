@@ -58,7 +58,7 @@ function Workspace() {
 
   const search = () => {
     const t = q.trim() || "Study";
-    setResults(["Complete Lecture", "Explained Simply", "Exam Problem Walkthrough"].map((s, i) => ({ id: VIDEO_IDS[i], title: `${t}: ${s}`, ch: CHANNELS[i] })));
+    setResults(["Complete Lecture", "Explained Simply", "Exam Problem Walkthrough"].map((s, i) => ({ id: VIDEO_IDS[i]!, title: `${t}: ${s}`, ch: CHANNELS[i]! })));
     setVideo(null);
   };
 
