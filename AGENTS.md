@@ -11,4 +11,5 @@
 
 - Use the shared StudyLibrary provider for all sorted notes and subject folders, scoped to the signed-in user, so lecture and standalone notes have one storage path.
 - Keep PDF.js dynamically loaded in the browser and store PDFs in private user-prefixed Cloud Storage paths, so SSR stays safe and files remain private.
-- Play user-supplied YouTube links through the official IFrame API, so end-of-video masking follows actual playback state without simulated search results.
+- Lecture search returns a fixed demo catalog and plays picks through the official YouTube IFrame API, so the demo works offline from a search API while end-of-video masking follows real playback state.
+- Merge saves whose normalized title matches an existing note into that note as numbered entries, so topics never duplicate.
