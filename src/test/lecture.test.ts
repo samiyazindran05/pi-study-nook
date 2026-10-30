@@ -17,4 +17,18 @@ describe("Lecture notes and playback", () => {
     expect(youtubeId("https://youtube.com.evil.test/watch?v=SOGnz9wOByc")).toBeNull();
     expect(youtubeId("https://youtube.com/watch?v=bad")).toBeNull();
   });
+});import { appendEntry, findTopic } from "@/lib/lecture";
+describe("Merging notes with the same topic", () => {
+  it("finds an existing note with the same or similar title", () => {
+    const docs = [{ title: "Heat Transfer" }];
+    expect(findTopic(docs, "heat transfer")).toBe(docs[0]);
+    expect(findTopic(docs, "Heat Transfer Lecture 2")).toBe(docs[0]);
+    expect(findTopic(docs, "Kinematics")).toBeUndefined();
+  });
+  it("appends sequential entries instead of creating a duplicate", () => {
+    const two = appendEntry("first", "second");
+    expect(two).toContain("## Entry 1\n\nfirst");
+    expect(two).toContain("## Entry 2\n\nsecond");
+    expect(appendEntry(two, "third")).toContain("## Entry 3\n\nthird");
+  });
 });

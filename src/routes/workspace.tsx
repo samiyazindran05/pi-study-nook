@@ -65,7 +65,7 @@ function Workspace() {
   const saveNotes = async () => {
     if (!title.trim() || !notes.trim()) { toast.error("Add a title and lecture notes first"); return; }
     setSaving(true);
-    try { const saved = await save(title, notes); setNotes(""); setTitle(""); toast.success(`Saved to ${saved.folder}`, { action: { label: "Open Notes Hub", onClick: () => { window.location.href = "/notes"; } } }); }
+    try { const saved = await save(title, notes); setNotes(""); setTitle(""); toast.success(saved.merged ? `Added as a new entry to "${saved.title}" in ${saved.folder}` : `Saved to ${saved.folder}`, { action: { label: "Open Notes Hub", onClick: () => { window.location.href = "/notes"; } } }); }
     catch (err) { toast.error(err instanceof Error ? err.message : "Could not save notes"); } finally { setSaving(false); }
   };
   return <main className={`mx-auto grid min-h-[calc(100dvh-120px)] max-w-[1600px] gap-4 p-4 ${focus ? "grid-cols-1" : "md:grid-cols-2"}`}>

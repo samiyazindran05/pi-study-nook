@@ -2,10 +2,10 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Doc } from "@/lib/store";
-import { sortedNote } from "@/lib/lecture";
+import { appendEntry, findTopic, sortedNote } from "@/lib/lecture";
 import { toast } from "sonner";
 
-type Library = { user: User | null; ready: boolean; docs: Doc[]; folders: string[]; save: (title: string, body: string, fallback?: string) => Promise<Doc>; addFolder: (name: string) => Promise<void> };
+type Library = { user: User | null; ready: boolean; docs: Doc[]; folders: string[]; save: (title: string, body: string, fallback?: string) => Promise<Doc & { merged?: boolean }>; addFolder: (name: string) => Promise<void> };
 const Context = createContext<Library | null>(null);
 const defaults = ["Physics", "Chemistry", "Maths"];
 
@@ -34,6 +34,14 @@ export function StudyLibrary({ children }: { children: ReactNode }) {
   const save = async (title: string, body: string, fallback = folders[0] ?? "Physics") => {
     if (!user) throw new Error("Sign in to save your notes");
     const note = sortedNote(title, body, folders, fallback);
+    const existing = findTopic(docs, title);
+    if (existing) {
+      const merged = { ...existing, body: appendEntry(existing.body, note.body), date: note.date };
+      const { error } = await supabase.from("study_notes").update({ body: merged.body, date: merged.date }).eq("id", existing.id).eq("user_id", user.id);
+      if (error) throw new Error(error.message);
+      setDocs(current => [merged, ...current.filter(d => d.id !== existing.id)]);
+      return { ...merged, merged: true };
+    }
     const { error } = await supabase.from("study_notes").insert({ ...note, user_id: user.id });
     if (error) throw new Error(error.message);
     setDocs(current => [note, ...current]);
