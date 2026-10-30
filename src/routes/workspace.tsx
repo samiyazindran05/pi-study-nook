@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { MonitorPlay, FileText, BookOpen, Play, Maximize2, Minimize2, ArrowLeft, Upload, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { MonitorPlay, FileText, BookOpen, Play, Search, Maximize2, Minimize2, ArrowLeft, Upload, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePersisted } from "@/lib/store";
-import { youtubeId } from "@/lib/lecture";
+import { searchLectures, materials, type LectureResult } from "@/lib/materials";
 import { supabase } from "@/integrations/supabase/client";
 import { useStudyLibrary } from "@/components/StudyLibrary";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ function Workspace() {
   const [tab, setTab] = useState<"yt" | "pdf" | "notion">("yt");
   const [notes, setNotes] = usePersisted("compile.lecture", "");
   const [title, setTitle] = usePersisted("compile.lectureTitle", "");
-  const [focus, setFocus] = useState(false); const [link, setLink] = useState(""); const [video, setVideo] = useState<string | null>(null);
+  const [focus, setFocus] = useState(false); const [link, setLink] = useState(""); const [results, setResults] = useState<LectureResult[]>([]); const [material, setMaterial] = useState(""); const [video, setVideo] = useState<string | null>(null);
   const [files, setFiles] = useState<PdfFile[]>([]); const [file, setFile] = useState<PdfFile | null>(null); const [url, setUrl] = useState(""); const [fileLoading, setFileLoading] = useState(false);
   const [uploading, setUploading] = useState(false); const [saving, setSaving] = useState(false); const [loadingFiles, setLoadingFiles] = useState(false); const [fileError, setFileError] = useState("");
   const [doc, setDoc] = useState<(typeof notionDocs)[number] | null>(null);
@@ -65,7 +65,7 @@ function Workspace() {
   const saveNotes = async () => {
     if (!title.trim() || !notes.trim()) { toast.error("Add a title and lecture notes first"); return; }
     setSaving(true);
-    try { const saved = await save(title, notes); setNotes(""); setTitle(""); toast.success(`Saved to ${saved.folder}`, { action: { label: "Open Notes Hub", onClick: () => { window.location.href = "/notes"; } } }); }
+    try { const saved = await save(title, notes); setNotes(""); setTitle(""); toast.success(saved.merged ? `Added as a new entry to "${saved.title}" in ${saved.folder}` : `Saved to ${saved.folder}`, { action: { label: "Open Notes Hub", onClick: () => { window.location.href = "/notes"; } } }); }
     catch (err) { toast.error(err instanceof Error ? err.message : "Could not save notes"); } finally { setSaving(false); }
   };
   return <main className={`mx-auto grid min-h-[calc(100dvh-120px)] max-w-[1600px] gap-4 p-4 ${focus ? "grid-cols-1" : "md:grid-cols-2"}`}>
@@ -76,16 +76,23 @@ function Workspace() {
       </div>
       <div className="min-w-0 flex-1 p-4">
         {tab === "yt" && <>
-          <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); const id = youtubeId(link); if (!id) { toast.error("Enter a valid YouTube video link"); return; } setVideo(id); }}>
-            <input aria-label="YouTube video link" value={link} onChange={e => setLink(e.target.value)} placeholder="Paste a YouTube lecture link" className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 outline-none focus:border-primary" />
-            <Button><Play />Watch</Button>
+          <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); if (!link.trim()) { toast.error("Type a topic to search"); return; } setResults(searchLectures(link)); setVideo(null); }}>
+            <input aria-label="Search lectures" value={link} onChange={e => setLink(e.target.value)} placeholder="Search Lectures — e.g. Thermodynamics" className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 outline-none focus:border-primary" />
+            <Button><Search />Search</Button>
           </form>
-          {video ? <div className="mt-5"><LecturePlayer id={video} /></div> : <div className="py-16 text-center text-muted-foreground"><MonitorPlay className="mx-auto mb-3" size={32} /><p>No lecture open</p></div>}
+          {video ? <div className="mt-5 space-y-3"><LecturePlayer id={video} />{results.length > 0 && <Button variant="ghost" onClick={() => setVideo(null)}><ArrowLeft />Back to results</Button>}</div>
+            : results.length ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{results.map(r => <div key={r.id} className="fade-up flex flex-col overflow-hidden rounded-lg border border-border bg-background/50"><img src={`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`} alt="" className="aspect-video w-full object-cover" /><div className="flex flex-1 flex-col gap-1 p-3"><h3 className="text-sm font-medium leading-snug">{r.title}</h3><p className="text-xs text-muted-foreground">{r.channel} · {r.length}</p><Button size="sm" className="mt-auto" onClick={() => setVideo(r.id)}><Play />Watch</Button></div></div>)}</div>
+            : <div className="py-16 text-center text-muted-foreground"><Search className="mx-auto mb-3" size={32} /><p>Search for a lecture to begin</p></div>}
         </>}
         {tab === "pdf" && <>
+          <label className="mb-4 block text-sm font-medium">Choose Study Material
+            <select value={material} onChange={e => { setMaterial(e.target.value); setFile(null); }} className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 outline-none focus:border-primary">
+              <option value="">Select a document…</option>{materials.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+            </select></label>
+          {material ? <article className="fade-up"><Button variant="ghost" onClick={() => setMaterial("")}><ArrowLeft />Close document</Button><h2 className="mt-3 break-words text-xl font-semibold">{material}</h2><div className="mt-4 max-h-[60dvh] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-5 leading-relaxed">{materials.find(m => m.name === material)?.body}</div></article> : <>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">{file ? <Button variant="ghost" onClick={() => setFile(null)}><ArrowLeft />All PDFs</Button> : <h2 className="text-lg font-semibold">Your PDFs</h2>}<input ref={input} type="file" accept="application/pdf,.pdf" className="hidden" onChange={e => void upload(e.target.files?.[0])} /><Button disabled={!user || uploading} onClick={() => input.current?.click()}>{uploading ? <Loader2 className="animate-spin" /> : <Upload />}{uploading ? "Uploading…" : "Upload PDF"}</Button></div>
           {file ? <><h3 className="mb-3 break-words font-medium">{file.name}</h3>{url ? <div className="max-h-[65dvh] overflow-auto"><PdfReader url={url} /></div> : fileLoading ? <Loader2 className="animate-spin" aria-label="Opening PDF" /> : <p className="text-destructive">Unable to open PDF. Return to the list and retry.</p>}</> : !user ? <p className="py-12 text-center text-muted-foreground">Sign in to open your private PDF library.</p> : loadingFiles ? <Loader2 className="mx-auto animate-spin" /> : fileError ? <div role="alert"><p>{fileError}</p><Button onClick={() => void loadFiles()}>Retry</Button></div> : files.length ? <div className="space-y-2">{files.map(f => <div key={f.path} className="flex items-center gap-2 rounded-lg border border-border p-2"><Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start whitespace-normal text-left" onClick={() => setFile(f)}><FileText /><span className="break-all">{f.name}</span></Button><Button variant="ghost" size="icon" title="Delete PDF" aria-label={`Delete ${f.name}`} onClick={async () => { if (!confirm(`Delete ${f.name}?`)) return; const { error } = await supabase.storage.from("study-pdfs").remove([f.path]); if (error) toast.error(error.message); else { await loadFiles(); toast.success("PDF deleted"); } }}><Trash2 /></Button></div>)}</div> : <p className="py-12 text-center text-muted-foreground">No PDFs uploaded yet.</p>}
-        </>}
+        </>}</>}
         {tab === "notion" && (doc ? <article><Button variant="ghost" onClick={() => setDoc(null)}><ArrowLeft />All documents</Button><h2 className="mt-4 text-2xl font-semibold">{doc.title}</h2><p className="mt-4 whitespace-pre-wrap leading-relaxed">{doc.body}</p></article> : <div className="space-y-2"><p className="mb-4 text-xs text-muted-foreground">Sample documents</p>{notionDocs.map(d => <Button key={d.title} variant="outline" className="w-full justify-start" onClick={() => setDoc(d)}><BookOpen />{d.title}</Button>)}</div>)}
       </div>
     </section>

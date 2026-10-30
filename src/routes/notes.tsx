@@ -57,7 +57,7 @@ function Notes() {
     try {
       const note = await saveNote(title, body, view ?? folders[0]);
       setTitle(""); setBody("");
-      toast.success(`Saved to ${note.folder}`);
+      toast.success(note.merged ? `Added as a new entry to "${note.title}" in ${note.folder}` : `Saved to ${note.folder}`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save note"); }
     finally { setBusy(false); }
   };

@@ -36,7 +36,7 @@ export function LecturePlayer({ id }: { id: string }) {
       <div ref={container} className="h-full w-full [&_iframe]:h-full [&_iframe]:w-full" />
       {(ended || error) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-4 text-center">
         <CheckCircle2 className="text-primary" size={40} />
-        <h3 className="text-xl font-semibold">{error ? "Video unavailable" : "Lesson Complete"}</h3>
+        <h3 className="text-xl font-semibold">{error ? "Video unavailable" : "Lesson Complete! 🌟"}</h3>
         {error && <p className="text-sm text-muted-foreground">{error}</p>}
         <Button variant="outline" onClick={() => setRetry(r => r + 1)}><RotateCcw />{error ? "Try again" : "Replay lecture"}</Button>
       </div>}
